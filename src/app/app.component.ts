@@ -13,7 +13,11 @@ export class AppComponent implements OnInit {
 
   error: any;
 
-  sounds: {blob: Blob, position: number[]}[];
+  recording: boolean;
+
+  sounds: Blob[];
+
+  positions: number[][];
 
   @ViewChild('canvas')
   canvas: ElementRef;
@@ -23,6 +27,8 @@ export class AppComponent implements OnInit {
 
   @ViewChild('audioSource')
   audioSource: ElementRef;
+
+  stopIt: any;
 
   constructor(private renderer: Renderer2) {}
 
@@ -36,37 +42,52 @@ export class AppComponent implements OnInit {
   }
 
   onAudioData(event: any) {
-    console.log('got data', event.data);
-    this.sounds.push({blob: event.data, position: null});
+    this.sounds.push(event.data);
   }
 
   onMouseDown(event: Event) {
     event.preventDefault();
     this.sounds = [];
+    this.positions = [];
     this.recorder.start(20);
   }
 
   onMouseUp(event: Event) {
     event.preventDefault();
     this.recorder.stop();
-    const blob = new Blob(this.sounds.map(s => s.blob), { type: 'audio/webm' });
+    const blob = new Blob(this.sounds, { type: 'audio/webm' });
     this.audioSource.nativeElement.src = URL.createObjectURL(blob);
-    this.audio.nativeElement.oncanplay = () => this.audio.nativeElement.play();
+    this.audio.nativeElement.ondurationchange = () => {
+      this.canvas.nativeElement.innerHTML = '';
+      const duration = this.audio.nativeElement.duration;
+      if (duration !== Infinity) {
+        this.positions = this.positions.filter((p, index) => index % 5 === 0);
+        const frameDuration = duration / this.positions.length;
+        console.log('duration', this.audio.nativeElement.duration);
+        this.positions.forEach((p, index) => {
+          const e = this.renderer.createElement('div');
+          this.renderer.addClass(e, 'sound');
+          this.renderer.setStyle(e, 'left', `${p[0]}px`);
+          this.renderer.setStyle(e, 'top', `${p[1]}px`);
+          this.renderer.appendChild(this.canvas.nativeElement, e);
+          this.renderer.listen(e, 'mouseenter', () => {
+            if (this.stopIt) {
+              clearTimeout(this.stopIt);
+            }
+            this.audio.nativeElement.currentTime = index * frameDuration;
+            this.stopIt = setTimeout(() => this.audio.nativeElement.pause(), frameDuration * 1000);
+            this.audio.nativeElement.play();
+          });
+        });
+      }
+    };
     this.audio.nativeElement.load();
-    this.canvas.nativeElement.innerHTML = '';
-    this.sounds.filter(s => s.position).forEach((s, index) => {
-      const e = this.renderer.createElement('div');
-      this.renderer.addClass(e, 'sound');
-      this.renderer.setStyle(e, 'left', `${s.position[0]}px`);
-      this.renderer.setStyle(e, 'top', `${s.position[1]}px`);
-      this.renderer.appendChild(this.canvas.nativeElement, e);
-    });
   }
 
   onMouseMove(event: MouseEvent) {
     event.preventDefault();
-    if (this.sounds != null && this.sounds.length > 0 && this.sounds[this.sounds.length - 1].position == null) {
-      this.sounds[this.sounds.length - 1].position = [event.clientX, event.clientY];
+    if (this.recorder.state === 'recording') {
+      this.positions.push([event.clientX, event.clientY]);
     }
   }
 }
